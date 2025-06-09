@@ -18,6 +18,7 @@ import Data.Monoid ((<>))
 import GHC.Data.Graph.Directed (SCC (..))
 import GHC.Data.Maybe
 import GHC.Data.OsPath (unsafeDecodeUtf)
+import GHC.Driver.Config.Parser (initParserOpts)
 import GHC.Driver.DynFlags
 import GHC.Driver.Env
 import GHC.Driver.Errors.Types
@@ -29,6 +30,7 @@ import GHC.Driver.Pipeline.Monad (PipelineOutput (NoOutputFile))
 import GHC.Driver.Session (pgm_F)
 import GHC.Iface.Errors.Types
 import GHC.Iface.Load (cannotFindModule)
+import GHC.Parser.Header (getOptions)
 import GHC.Prelude
 import GHC.Types.PkgQual
 import GHC.Types.SourceError
@@ -254,6 +256,10 @@ processDeps dflags hsc_env excl_mods root hdl m_dep_json (AcyclicSCC (ModuleNode
     extra_suffixes = map unsafeEncodeUtf (depSuffixes dflags)
     include_pkg_deps = depIncludePkgDeps dflags
     src_file = msHsFileOsPath node
+
+    popts = initParserOpts (ms_hspp_opts node)
+    mopts = map unLoc $ snd $ getOptions popts (fromJust $ ms_hspp_buf node) (ms_hspp_file node)
+
     dep_node =
         DepNode
             { dn_mod = ms_mod node
@@ -261,8 +267,7 @@ processDeps dflags hsc_env excl_mods root hdl m_dep_json (AcyclicSCC (ModuleNode
             , dn_obj = msObjFileOsPath node
             , dn_hi = msHiFileOsPath node
             , dn_boot = isBootSummary node
-            , -- , dn_options = Set.fromList (ms_opts node)
-              dn_options = mempty
+            , dn_options = Set.fromList mopts
             }
 
     preprocessor
