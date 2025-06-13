@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
@@ -17,7 +18,12 @@ import Data.List (partition)
 import Data.Monoid ((<>))
 import GHC.Data.Graph.Directed (SCC (..))
 import GHC.Data.Maybe
+#if __GLASGOW_HASKELL__ >= 912
 import GHC.Data.OsPath (unsafeDecodeUtf)
+#else
+import GHC.Driver.Ppr (showSDoc)
+import GHC.Utils.Outputable (ppr, vcat, text, nest)
+#endif
 import GHC.Driver.Config.Parser (initParserOpts)
 import GHC.Driver.DynFlags
 import GHC.Driver.Env
@@ -59,6 +65,23 @@ import GHC.SysTools qualified as SysTools
 import GHC.Utils.Outputable qualified as O
 import System.OsString qualified as OsString
 
+#if __GLASGOW_HASKELL__ < 912
+unsafeDecodeUtf :: HasCallStack => OsPath -> FilePath
+unsafeDecodeUtf p = either (\err -> panic $ "Failed to decodeUtf \"" ++ show p ++ "\", because: " ++ show err) id (decodeUtf p)
+
+ml_hs_file_ospath :: ModLocation -> Maybe OsString
+ml_hs_file_ospath m = unsafeEncodeUtf <$> ml_hs_file m
+
+ml_obj_file_ospath, ml_hi_file_ospath :: ModLocation -> OsString
+ml_obj_file_ospath = unsafeEncodeUtf . ml_obj_file
+ml_hi_file_ospath = unsafeEncodeUtf . ml_hi_file
+
+msHsFileOsPath,msObjFileOsPath, msHiFileOsPath :: ModSummary -> OsString
+msHsFileOsPath ms = expectJust "msHsFilePath" (ml_hs_file_ospath (ms_location ms))
+msObjFileOsPath ms = ml_obj_file_ospath (ms_location ms)
+msHiFileOsPath ms = ml_hi_file_ospath (ms_location ms)
+
+#endif
 -----------------------------------------------------------------
 --
 --              The main function
@@ -231,16 +254,29 @@ processDeps ::
 --
 -- For {-# SOURCE #-} imports the "hi" will be "hi-boot".
 
-processDeps _dflags _ _ _ _ _ (CyclicSCC nodes) =
+processDeps dflags _ _ _ _ _ (CyclicSCC nodes) =
     -- There shouldn't be any cycles; report them
+#if __GLASGOW_HASKELL__ >= 912
     throwOneError
         $ cyclicModuleErr nodes
-processDeps _dflags _ _ _ _ _ (AcyclicSCC (InstantiationNode _uid node)) =
+#else
+    throwGhcExceptionIO $ ProgramError $
+       showSDoc dflags $ GHC.cyclicModuleErr nodes
+#endif
+processDeps dflags _ _ _ _ _ (AcyclicSCC (InstantiationNode _uid node)) =
     -- There shouldn't be any backpack instantiations; report them as well
+#if __GLASGOW_HASKELL__ >= 912
     throwOneError
         $ mkPlainErrorMsgEnvelope noSrcSpan
         $ GhcDriverMessage
         $ DriverInstantiationNodeInDependencyGeneration node
+#else
+     throwGhcExceptionIO $ ProgramError $
+       showSDoc dflags $
+         vcat [ text "Unexpected backpack instantiation in dependency graph while constructing Makefile:"
+              , nest 2 $ ppr node ]
+#endif
+
 processDeps _dflags_ _ _ _ _ _ (AcyclicSCC (LinkNode{})) =
     return ()
 processDeps dflags hsc_env excl_mods root hdl m_dep_json (AcyclicSCC (ModuleNode _ node)) = do
@@ -365,7 +401,7 @@ writeDependencies include_pkgs root hdl suffixes node deps =
     -- files if the module has a corresponding .hs-boot file (#14482)
     boot_dep
         | IsBoot <- dn_boot =
-            [([obj], hi) | (obj, hi) <- zip (suffixed (removeBootSuffix dn_obj)) (suffixed dn_hi)]
+            [([obj], hi) | (obj, hi) <- zip (suffixed (removeBootSuffix' dn_obj)) (suffixed dn_hi)]
         | otherwise =
             []
 
@@ -375,7 +411,7 @@ writeDependencies include_pkgs root hdl suffixes node deps =
     import_dep = \case
         DepHi{dep_path, dep_boot, dep_unit}
             | isNothing dep_unit || include_pkgs
-            , let path = addBootSuffix_maybe dep_boot dep_path ->
+            , let path = addBootSuffix_maybe' dep_boot dep_path ->
                 [([obj], hi) | (obj, hi) <- zip obj_files (suffixed path)]
             | otherwise ->
                 []
@@ -388,6 +424,14 @@ writeDependencies include_pkgs root hdl suffixes node deps =
     suffixed f = insertSuffixes_ospath f suffixes
 
     DepNode{dn_src, dn_obj, dn_hi, dn_boot} = node
+
+#if __GLASGOW_HASKELL__ >= 912
+    addBootSuffix_maybe' = addBootSuffix_maybe
+    removeBootSuffix' = removeBootSuffix
+#else
+    addBootSuffix_maybe' isboot = unsafeEncodeUtf . (addBootSuffix_maybe isboot) . unsafeDecodeUtf
+    removeBootSuffix' = unsafeEncodeUtf . removeBootSuffix . unsafeDecodeUtf
+#endif
 
 -----------------------------
 writeDependency :: OsPath -> Handle -> [OsPath] -> OsPath -> IO ()
