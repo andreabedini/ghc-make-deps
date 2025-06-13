@@ -11,7 +11,7 @@ module MakeDeps.MakeFile (
 where
 
 import Control.Monad (unless, when)
-import Data.Foldable (for_, traverse_)
+import Data.Foldable (traverse_)
 import Data.IORef
 import Data.List (partition)
 import Data.Monoid ((<>))
@@ -42,6 +42,7 @@ import GHC.Utils.Error
 import GHC.Utils.Exception
 import GHC.Utils.Logger
 import GHC.Utils.Misc
+import GHC.Utils.Outputable qualified as O
 import GHC.Utils.Panic
 import GHC.Utils.TmpFs
 import MakeDeps.MakeFile.JSON
@@ -54,7 +55,6 @@ import Prelude ()
 import Data.Set qualified as Set
 import GHC qualified
 import GHC.SysTools qualified as SysTools
-import GHC.Utils.Outputable qualified as O
 import System.OsString qualified as OsString
 
 -----------------------------------------------------------------
@@ -101,30 +101,28 @@ mkDependModuleGraph :: GhcMonad m => DynFlags -> ModuleGraph -> m ()
 mkDependModuleGraph dflags module_graph = do
     logger <- getLogger
 
-    hsc_env <- getSession
+    tmpfs <- hsc_tmpfs <$> getSession
+    files <- liftIO $ beginMkDependHS logger tmpfs dflags
 
     -- Sort into dependency order
     -- There should be no cycles
     let sorted = GHC.topSortModuleGraph False module_graph Nothing
-        excl_mods = depExcludeMods dflags
 
-    liftIO $ do
-        files <- beginMkDependHS logger (hsc_tmpfs hsc_env) dflags
+    -- Print out the dependencies if wanted
+    liftIO $ debugTraceMsg logger 2 (O.text "Module dependencies" O.$$ O.ppr sorted)
 
-        -- Print out the dependencies if wanted
-        debugTraceMsg logger 2 (O.text "Module dependencies" O.$$ O.ppr sorted)
+    -- Process them one by one, dumping results into makefile
+    -- and complaining about cycles
+    hsc_env <- getSession
+    root <- liftIO getCurrentDirectory
+    let excl_mods = depExcludeMods dflags
+    mapM_ (liftIO . processDeps dflags hsc_env excl_mods root (mkd_tmp_hdl files) (mkd_dep_json files)) sorted
 
-        -- Process them one by one, dumping results into makefile
-        -- and complaining about cycles
-        root <- getCurrentDirectory
+    -- If -ddump-mod-cycles, show cycles in the module graph
+    liftIO $ dumpModCycles logger module_graph
 
-        for_ sorted $ processDeps dflags hsc_env excl_mods root (mkd_tmp_hdl files) (mkd_dep_json files)
-
-        -- If -ddump-mod-cycles, show cycles in the module graph
-        dumpModCycles logger module_graph
-
-        -- Tidy up
-        endMkDependHS logger files
+    -- Tidy up
+    liftIO $ endMkDependHS logger files
 
 -----------------------------------------------------------------
 --
@@ -515,8 +513,8 @@ pprCycle summaries = pp_group (CyclicSCC summaries)
         O.text mod_str
             O.<> O.text (replicate (20 - length mod_str) ' ')
             O.<+> ( pp_imps O.empty (map snd (ms_imps summary))
-                        O.$$ pp_imps (O.text "{-# SOURCE #-}") (map snd (ms_srcimps summary))
-                  )
+                    O.$$ pp_imps (O.text "{-# SOURCE #-}") (map snd (ms_srcimps summary))
+                )
       where
         mod_str = moduleNameString (moduleName (ms_mod summary))
 
