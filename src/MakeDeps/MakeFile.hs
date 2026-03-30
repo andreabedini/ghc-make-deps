@@ -18,12 +18,12 @@ import Data.List (partition)
 import Data.Monoid ((<>))
 import GHC.Data.Graph.Directed (SCC (..))
 import GHC.Data.Maybe
-#if __GLASGOW_HASKELL__ >= 912
-import GHC.Data.OsPath (unsafeDecodeUtf)
-#else
+#if __GLASGOW_HASKELL__ < 912
 import GHC.Driver.Ppr (showSDoc)
 import GHC.Utils.Outputable (ppr, vcat, text, nest)
+import MakeDeps.Compat (ml_hs_file_ospath, ml_hi_file_ospath, ml_obj_file_ospath, msHiFileOsPath, msHsFileOsPath, msObjFileOsPath)
 #endif
+import MakeDeps.Compat (unsafeDecodeUtf)
 import GHC.Driver.Config.Parser (initParserOpts)
 import GHC.Driver.DynFlags
 import GHC.Driver.Env
@@ -65,23 +65,7 @@ import GHC.SysTools qualified as SysTools
 import GHC.Utils.Outputable qualified as O
 import System.OsString qualified as OsString
 
-#if __GLASGOW_HASKELL__ < 912
-unsafeDecodeUtf :: HasCallStack => OsPath -> FilePath
-unsafeDecodeUtf p = either (\err -> panic $ "Failed to decodeUtf \"" ++ show p ++ "\", because: " ++ show err) id (decodeUtf p)
 
-ml_hs_file_ospath :: ModLocation -> Maybe OsString
-ml_hs_file_ospath m = unsafeEncodeUtf <$> ml_hs_file m
-
-ml_obj_file_ospath, ml_hi_file_ospath :: ModLocation -> OsString
-ml_obj_file_ospath = unsafeEncodeUtf . ml_obj_file
-ml_hi_file_ospath = unsafeEncodeUtf . ml_hi_file
-
-msHsFileOsPath,msObjFileOsPath, msHiFileOsPath :: ModSummary -> OsString
-msHsFileOsPath ms = expectJust "msHsFilePath" (ml_hs_file_ospath (ms_location ms))
-msObjFileOsPath ms = ml_obj_file_ospath (ms_location ms)
-msHiFileOsPath ms = ml_hi_file_ospath (ms_location ms)
-
-#endif
 -----------------------------------------------------------------
 --
 --              The main function

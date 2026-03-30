@@ -16,6 +16,9 @@ library
         MakeDeps.MakeFile
         MakeDeps.MakeFile.JSON
 
+    other-modules:
+        MakeDeps.Compat
+
     other-extensions:
         LambdaCase NamedFieldPuns DeriveGeneric DerivingVia
         GeneralizedNewtypeDeriving PatternSynonyms RecordWildCards

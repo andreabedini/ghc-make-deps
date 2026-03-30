@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -24,11 +23,7 @@ where
 import Data.Foldable (traverse_)
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import GHC.Data.FastString (FastString, lexicalCompareFS, unpackFS)
-#if __GLASGOW_HASKELL__ >= 912
-import GHC.Data.OsPath (unsafeDecodeUtf)
-#else
-import GHC.Utils.Panic (panic)
-#endif
+import MakeDeps.Compat (unsafeDecodeUtf)
 import GHC.Generics (Generic, Generically (Generically))
 import GHC.Unit (
     GenModule (..),
@@ -49,9 +44,6 @@ import GHC.Utils.Json (
  )
 import GHC.Utils.Misc (
   withAtomicRename,
-#if __GLASGOW_HASKELL__ < 912
-  HasCallStack,
-#endif
  )
 import GHC.Utils.Outputable as O (showSDocUnsafe)
 import System.FilePath ()
@@ -60,11 +52,6 @@ import System.OsPath
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import GHC.Unit.Info qualified as GHC
-
-#if __GLASGOW_HASKELL__ < 912
-unsafeDecodeUtf :: HasCallStack => OsPath -> FilePath
-unsafeDecodeUtf p = either (\err -> panic $ "Failed to decodeUtf \"" ++ show p ++ "\", because: " ++ show err) id (decodeUtf p)
-#endif
 
 newtype PackageId = PackageIdX GHC.PackageId
     deriving newtype Eq
