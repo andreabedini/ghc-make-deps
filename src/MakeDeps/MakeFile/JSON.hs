@@ -23,7 +23,7 @@ where
 import Data.Foldable (traverse_)
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import GHC.Data.FastString (FastString, lexicalCompareFS, unpackFS)
-import GHC.Data.OsPath (unsafeDecodeUtf)
+import MakeDeps.Compat (unsafeDecodeUtf)
 import GHC.Generics (Generic, Generically (Generically))
 import GHC.Unit (
     GenModule (..),
@@ -42,7 +42,9 @@ import GHC.Utils.Json (
     ToJson (..),
     renderJSON,
  )
-import GHC.Utils.Misc (withAtomicRename)
+import GHC.Utils.Misc (
+  withAtomicRename,
+ )
 import GHC.Utils.Outputable as O (showSDocUnsafe)
 import System.FilePath ()
 import System.OsPath
